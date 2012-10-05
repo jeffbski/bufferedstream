@@ -202,6 +202,7 @@ BufferedStream.prototype.end = function (chunk, encoding) {
  */
 BufferedStream.prototype._emitEndDestroyNextTick = function () {
   var self = this;
+
   process.nextTick(function tick() {
     if (self.empty) {
       self.destroy();
