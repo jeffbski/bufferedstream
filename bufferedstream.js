@@ -89,6 +89,8 @@ BufferedStream.prototype.pause = function () {
 BufferedStream.prototype.resume = function () {
   this._wait = false;
   this.emit("resume");
+  if (!this.empty) this._flushOnNextTick();
+  if (this.ended) this._emitEndDestroyNextTick();
 };
 
 /**
@@ -109,18 +111,7 @@ BufferedStream.prototype.write = function (chunk, encoding) {
   this.size += chunk.length;
 
   if (!this._flushing) {
-    var self = this;
-
-    process.nextTick(function tick() {
-      self.flush();
-
-      if (self.empty) {
-        self._flushing = false;
-      } else {
-        process.nextTick(tick);
-      }
-    });
-
+    this._flushOnNextTick();  // flush writes
     this._flushing = true;
   }
 
@@ -130,6 +121,30 @@ BufferedStream.prototype.write = function (chunk, encoding) {
   }
 
   return true;
+};
+
+/**
+ * Calls flush during next tick. This is invoked in
+ * write() and possibly in resume().
+ *
+ * If stream is paused, then exit the loop and
+ * continue on resume() otherwise could go into
+ * an infinate loop if never resumed.
+ */
+BufferedStream.prototype._flushOnNextTick = function () {
+  var self = this;
+
+  process.nextTick(function tick() {
+    self.flush();
+
+    if (self.empty) {
+      self._flushing = false;
+    } else if (self._wait) { // if paused, exit now will be continued on resume
+      return; // without this, we could go into infinate loop if never resumed
+    } else {
+      process.nextTick(tick);
+    }
+  });
 };
 
 /**
@@ -174,13 +189,25 @@ BufferedStream.prototype.end = function (chunk, encoding) {
   }
 
   this.ended = true;
+  this._emitEndDestroyNextTick(); // emit end and destroy on next tick
+};
 
+/**
+ * Once the queue is empty, then emit the 'end'
+ * This is invoked in `end()` and possibly `resume()`
+ *
+ * If the stream is paused, exit the loop
+ * and continue when resumed, otherwise
+ * can go into infinate loop if never resumed
+ */
+BufferedStream.prototype._emitEndDestroyNextTick = function () {
   var self = this;
-
   process.nextTick(function tick() {
     if (self.empty) {
       self.destroy();
       self.emit("end");
+    } else if (self._wait) { // if paused, exit this now, continue in resume()
+      return; // otherwise could go into infinate loop if never resumed
     } else {
       process.nextTick(tick);
     }
