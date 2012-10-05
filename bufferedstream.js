@@ -188,7 +188,6 @@ BufferedStream.prototype.end = function (chunk, encoding) {
     this.write(chunk, encoding);
   }
 
-  this.ended = true;
   this._emitEndDestroyNextTick(); // emit end and destroy on next tick
 };
 
@@ -204,6 +203,7 @@ BufferedStream.prototype._emitEndDestroyNextTick = function () {
   var self = this;
 
   process.nextTick(function tick() {
+    self.ended = true;
     if (self.empty) {
       self.destroy();
       self.emit("end");
